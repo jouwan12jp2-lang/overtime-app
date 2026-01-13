@@ -11,13 +11,31 @@ st.set_page_config(page_title="加班費助手", layout="wide", initial_sidebar_
 st.markdown("""
     <style>
     .main { background-color: #f8f9fa; }
-    .stMetric { 
-        background-color: #ffffff; 
-        padding: 20px; 
-        border-radius: 12px; 
-        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-        border: 1px solid #eee;
+    /* 卡片容器樣式 */
+    .stat-container {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 15px;
+        margin-bottom: 20px;
     }
+    .stat-card {
+        flex: 1;
+        min-width: 200px;
+        padding: 20px;
+        border-radius: 15px;
+        background: white;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+        border-left: 5px solid #007bff;
+        text-align: left;
+    }
+    .card-label { font-size: 0.9rem; color: #666; margin-bottom: 5px; }
+    .card-value { font-size: 1.6rem; font-weight: bold; color: #31333F; }
+    
+    /* 不同卡片的顏色區分 */
+    .money { border-left-color: #FFD700; } /* 金色 */
+    .hours { border-left-color: #007bff; } /* 藍色 */
+    .days  { border-left-color: #28a745; } /* 綠色 */
+
     .stButton>button { 
         width: 100%; 
         border-radius: 8px; 
@@ -25,12 +43,6 @@ st.markdown("""
         background-color: #007bff; 
         color: white; 
         font-weight: bold;
-    }
-    /* 讓手機端的 Markdown 標題更好看 */
-    .stat-text {
-        font-size: 1.2rem;
-        margin-bottom: 5px;
-        color: #31333F;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -109,7 +121,6 @@ with tab1:
         if dt2 <= dt1: dt2 += timedelta(days=1)
         calc_hours = float((dt2 - dt1).total_seconds() / 3600.0)
         
-        # 預設時薪設定處 (218)
         f_wage = st.number_input("您的時薪", value=218, step=1)
         
         if st.button("🚀 確認儲存"):
@@ -135,15 +146,27 @@ with tab1:
         st.write(f"🔸 2.0時段: {calc_hours if '假日' in is_holiday else 0:.1f} H")
 
 with tab2:
-    # --- 修正後的手機友善統計卡片 ---
+    # --- 升級版：美化統計卡片 ---
     total_amt = filtered_df['總加班費'].sum()
     total_hrs = filtered_df['總時數'].sum()
     total_days = len(filtered_df)
 
-    # 使用 Markdown 垂直排列，確保手機版顯示正常
-    st.markdown(f'<p class="stat-text">💰 預估應領：<strong>${total_amt:,.0f}</strong></p>', unsafe_allow_html=True)
-    st.markdown(f'<p class="stat-text">⏱️ 累積時數：<strong>{total_hrs:.1f} H</strong></p>', unsafe_allow_html=True)
-    st.markdown(f'<p class="stat-text">📅 登記天數：<strong>{total_days} 天</strong></p>', unsafe_allow_html=True)
+    st.markdown(f"""
+    <div class="stat-container">
+        <div class="stat-card money">
+            <div class="card-label">💰 預估應領</div>
+            <div class="card-value">${total_amt:,.0f}</div>
+        </div>
+        <div class="stat-card hours">
+            <div class="card-label">⏱️ 累積時數</div>
+            <div class="card-value">{total_hrs:.1f} H</div>
+        </div>
+        <div class="stat-card days">
+            <div class="card-label">📅 登記天數</div>
+            <div class="card-value">{total_days} 天</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
     
     st.divider()
     
@@ -151,13 +174,11 @@ with tab2:
         col_t, col_b = st.columns([0.7, 0.3])
         col_t.subheader(f"📋 {sel_month}月期 明細")
         
-        # Excel 下載
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
             filtered_df.drop(columns=["密鑰"]).to_excel(writer, index=False)
         col_b.download_button("📥 匯出 Excel", buffer.getvalue(), file_name=f"report_{sel_month}.xlsx")
         
-        # 數據表格
         st.dataframe(filtered_df.drop(columns=["密鑰"]), use_container_width=True)
         
         # 刪除功能
@@ -168,7 +189,6 @@ with tab2:
         
         if st.button("🚨 確認刪除選中紀錄"):
             selected_date_str = to_delete_label[:10]
-            # 刪除過濾：保留「不是該密鑰」或「不是該日期」的資料
             updated_all_data = all_data[~((all_data['密鑰'] == str(user_key)) & (all_data['日期'].astype(str) == selected_date_str))]
             updated_all_data.to_csv(DATA_FILE, index=False)
             st.toast(f"已刪除 {selected_date_str} 的紀錄", icon='🗑️')
