@@ -89,13 +89,17 @@ with tab1:
         default_idx = 1 if (is_weekend or is_pub_holiday) else 0
         is_holiday = st.selectbox("日期性質", ["平日", "假日 (2.0)"], index=default_idx)
         
-        # --- 時間選擇器 (30分鐘為單位) ---
+        # --- 修正後的時間選擇器 (顯示 HH:MM) ---
         t_col1, t_col2 = st.columns(2)
-        # 產生 00:00 到 23:30 的選項
-        times_30 = [time(h, m) for h in range(24) for m in (0, 30)]
+        # 建立 30 分鐘間隔的時間清單，並格式化為字串
+        time_labels = [f"{h:02d}:{m:02d}" for h in range(24) for m in (0, 30)]
         
-        st_time = t_col1.selectbox("開始時間", times_30, index=34) # 預設 17:00
-        en_time = t_col2.selectbox("結束時間", times_30, index=38) # 預設 19:00
+        st_label = t_col1.selectbox("開始時間", time_labels, index=34) # 預設 17:00
+        en_label = t_col2.selectbox("結束時間", time_labels, index=38) # 預設 19:00
+        
+        # 將字串轉回時間物件進行計算
+        st_time = datetime.strptime(st_label, "%H:%M").time()
+        en_time = datetime.strptime(en_label, "%H:%M").time()
         
         dt1 = datetime.combine(date, st_time)
         dt2 = datetime.combine(date, en_time)
@@ -150,14 +154,17 @@ with tab2:
         # --- 刪除功能區塊 ---
         st.divider()
         st.subheader("🗑️ 刪除紀錄")
-        delete_list = filtered_df['日期'].astype(str).tolist()
-        to_delete = st.selectbox("選擇要刪除的日期", delete_list)
+        # 顯示日期 + 類型，避免同天重複紀錄不知道刪哪筆
+        delete_options = filtered_df.apply(lambda x: f"{x['日期']} ({x['類型']} {x['總時數']}H)", axis=1).tolist()
+        to_delete_label = st.selectbox("選擇要刪除的紀錄", delete_options)
         
         if st.button("🚨 確認刪除選中紀錄"):
-            # 執行刪除：過濾掉該密鑰且該日期的資料
-            updated_all_data = all_data[~((all_data['密鑰'] == str(user_key)) & (all_data['日期'].astype(str) == to_delete))]
+            # 取得選中的日期（標籤的前 10 個字元）
+            selected_date_str = to_delete_label[:10]
+            # 執行刪除
+            updated_all_data = all_data[~((all_data['密鑰'] == str(user_key)) & (all_data['日期'].astype(str) == selected_date_str))]
             updated_all_data.to_csv(DATA_FILE, index=False)
-            st.toast(f"已刪除 {to_delete} 的紀錄", icon='🗑️')
+            st.toast(f"已刪除 {selected_date_str} 的紀錄", icon='🗑️')
             st.rerun()
     else:
         st.info("目前尚無資料。")
