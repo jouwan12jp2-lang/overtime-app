@@ -1,14 +1,13 @@
 import streamlit as st
 import pandas as pd
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time
 import holidays
 import io
 
 # 1. 頁面配置與美化樣式
 st.set_page_config(page_title="加班費助手", layout="wide", initial_sidebar_state="expanded")
 
-# 自訂 CSS 加強視覺效果
 st.markdown("""
     <style>
     .main { background-color: #f8f9fa; }
@@ -27,17 +26,10 @@ st.markdown("""
         color: white; 
         font-weight: bold;
     }
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 24px;
-    }
-    .stTabs [data-baseweb="tab"] {
-        font-size: 18px;
-        font-weight: 600;
-    }
     </style>
     """, unsafe_allow_html=True)
 
-# 2. 資料庫設定 (存放在雲端伺服器本地)
+# 2. 資料庫設定
 DATA_FILE = "overtime_db.csv"
 columns = ["日期", "密鑰", "類型", "總時數", "時薪", "A時段(1.33)", "B時段(1.66)", "C時段(2.0)", "總加班費"]
 
@@ -48,7 +40,7 @@ if not os.path.exists(DATA_FILE):
 with st.sidebar:
     st.image("https://img.icons8.com/clouds/100/000000/time-machine.png", width=80)
     st.title("加班管理中心")
-    user_key = st.text_input("🔑 個人密鑰", type="password", help="輸入密鑰以存取個人資料")
+    user_key = st.text_input("🔑 個人密鑰", type="password")
     
     if not user_key:
         st.info("請輸入密鑰開始使用")
@@ -56,7 +48,7 @@ with st.sidebar:
     
     st.success(f"已登入")
     
-    # 薪資週期篩選 (21號 - 20號)
+    # 薪資週期篩選
     st.divider()
     today = datetime.now()
     period_options = []
@@ -71,12 +63,12 @@ with st.sidebar:
     selected_p = st.selectbox("切換統計週期", period_options, format_func=lambda x: x[2])
     sel_year, sel_month = selected_p[0], selected_p[1]
 
-# 讀取資料並過濾
+# 讀取資料
 all_data = pd.read_csv(DATA_FILE)
 all_data["日期"] = pd.to_datetime(all_data["日期"]).dt.date
 df = all_data[all_data["密鑰"] == str(user_key)].copy()
 
-# 計算該週期的篩選
+# 篩選當前週期資料
 end_date = datetime(sel_year, sel_month, 20).date()
 start_date = (datetime(sel_year, sel_month, 1) - timedelta(days=15)).replace(day=21).date()
 filtered_df = df[(df['日期'] >= start_date) & (df['日期'] <= end_date)].sort_values("日期", ascending=False)
@@ -91,18 +83,20 @@ with tab1:
         st.subheader("📝 加班明細錄入")
         date = st.date_input("加班日期", datetime.now())
         
-        # 自動判斷假日
         tw_holidays = holidays.Taiwan()
         is_weekend = date.weekday() >= 5
         is_pub_holiday = date in tw_holidays
         default_idx = 1 if (is_weekend or is_pub_holiday) else 0
         is_holiday = st.selectbox("日期性質", ["平日", "假日 (2.0)"], index=default_idx)
         
-        t1, t2 = st.columns(2)
-        st_time = t1.time_input("開始時間", datetime.strptime("17:00", "%H:%M"))
-        en_time = t2.time_input("結束時間", datetime.strptime("19:00", "%H:%M"))
+        # --- 時間選擇器 (30分鐘為單位) ---
+        t_col1, t_col2 = st.columns(2)
+        # 產生 00:00 到 23:30 的選項
+        times_30 = [time(h, m) for h in range(24) for m in (0, 30)]
         
-        # 時數計算邏輯
+        st_time = t_col1.selectbox("開始時間", times_30, index=34) # 預設 17:00
+        en_time = t_col2.selectbox("結束時間", times_30, index=38) # 預設 19:00
+        
         dt1 = datetime.combine(date, st_time)
         dt2 = datetime.combine(date, en_time)
         if dt2 <= dt1: dt2 += timedelta(days=1)
@@ -111,7 +105,6 @@ with tab1:
         f_wage = st.number_input("您的時薪", value=218, step=1)
         
         if st.button("🚀 確認儲存"):
-            # 拆解時段與計算金額
             a_h = 0.0; b_h = 0.0; c_h = 0.0
             if "假日" in is_holiday:
                 c_h, type_label = calc_hours, "假日"
@@ -120,25 +113,20 @@ with tab1:
                 b_h = max(0.0, calc_hours - 2.0)
             
             total_pay = round((a_h * 1.33 + b_h * 1.66 + c_h * 2.0) * f_wage, 0)
-            
-            # 寫入資料
             new_row = pd.DataFrame([[date, user_key, type_label, calc_hours, f_wage, a_h, b_h, c_h, total_pay]], columns=columns)
-            pd.concat([all_data, new_row], ignore_index=True).to_csv(DATA_FILE, index=False)
-            st.toast("資料已儲存到雲端！", icon='✅')
+            all_data = pd.concat([all_data, new_row], ignore_index=True)
+            all_data.to_csv(DATA_FILE, index=False)
+            st.toast("資料已儲存！", icon='✅')
             st.rerun()
 
     with col_info:
         st.subheader("💡 即時預算")
         st.info(f"本次加班：**{calc_hours:.1f}** 小時")
-        if "假日" not in is_holiday:
-            st.write(f"🔹 前2小時(1.33): {min(calc_hours, 2.0):.1f} H")
-            st.write(f"🔹 後續時數(1.66): {max(0.0, calc_hours - 2.0):.1f} H")
-        else:
-            st.write(f"🔸 假日全段(2.0): {calc_hours:.1f} H")
-        st.warning("⚠️ 儲存前請確認「日期性質」是否正確")
+        st.write(f"🔹 1.33時段: {min(calc_hours, 2.0) if '假日' not in is_holiday else 0:.1f} H")
+        st.write(f"🔹 1.66時段: {max(0.0, calc_hours - 2.0) if '假日' not in is_holiday else 0:.1f} H")
+        st.write(f"🔸 2.0時段: {calc_hours if '假日' in is_holiday else 0:.1f} H")
 
 with tab2:
-    # 統計卡片列
     m1, m2, m3 = st.columns(3)
     total_amt = filtered_df['總加班費'].sum()
     total_hrs = filtered_df['總時數'].sum()
@@ -149,16 +137,27 @@ with tab2:
     st.divider()
     
     if not filtered_df.empty:
-        col_title, col_btn = st.columns([0.7, 0.3])
-        col_title.subheader(f"📋 {sel_month}月期 明細")
+        col_t, col_b = st.columns([0.7, 0.3])
+        col_t.subheader(f"📋 {sel_month}月期 明細")
         
-        # Excel 下載功能
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
             filtered_df.drop(columns=["密鑰"]).to_excel(writer, index=False)
-        col_btn.download_button("📥 匯出 Excel", buffer.getvalue(), file_name=f"overtime_{sel_month}m.xlsx")
+        col_b.download_button("📥 匯出 Excel", buffer.getvalue(), file_name=f"report_{sel_month}.xlsx")
         
-        # 顯示表格 (隱藏密鑰欄位)
         st.dataframe(filtered_df.drop(columns=["密鑰"]), use_container_width=True)
+        
+        # --- 刪除功能區塊 ---
+        st.divider()
+        st.subheader("🗑️ 刪除紀錄")
+        delete_list = filtered_df['日期'].astype(str).tolist()
+        to_delete = st.selectbox("選擇要刪除的日期", delete_list)
+        
+        if st.button("🚨 確認刪除選中紀錄"):
+            # 執行刪除：過濾掉該密鑰且該日期的資料
+            updated_all_data = all_data[~((all_data['密鑰'] == str(user_key)) & (all_data['日期'].astype(str) == to_delete))]
+            updated_all_data.to_csv(DATA_FILE, index=False)
+            st.toast(f"已刪除 {to_delete} 的紀錄", icon='🗑️')
+            st.rerun()
     else:
-        st.info(f"目前在 {sel_year}年{sel_month}月期 尚無資料。")
+        st.info("目前尚無資料。")
