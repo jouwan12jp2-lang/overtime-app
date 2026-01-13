@@ -11,7 +11,35 @@ st.set_page_config(page_title="加班費助手", layout="wide", initial_sidebar_
 st.markdown("""
     <style>
     .main { background-color: #f8f9fa; }
-    /* 卡片容器樣式 */
+    
+    /* --- Tabs 分頁美化 --- */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 10px;
+        background-color: #f0f2f6;
+        padding: 8px 15px 0px 15px;
+        border-radius: 15px 15px 0 0;
+    }
+    .stTabs [data-baseweb="tab"] {
+        height: 50px;
+        white-space: pre-wrap;
+        background-color: transparent;
+        border-radius: 10px 10px 0 0;
+        gap: 1px;
+        padding: 10px 25px;
+        font-weight: 600;
+        color: #555;
+    }
+    .stTabs [data-baseweb="tab"]:hover {
+        background-color: #ffffff;
+        color: #007bff;
+    }
+    .stTabs [aria-selected="true"] {
+        background-color: #ffffff !important;
+        color: #007bff !important;
+        border-bottom: 3px solid #007bff !important;
+    }
+
+    /* --- 卡片容器樣式 --- */
     .stat-container {
         display: flex;
         flex-wrap: wrap;
@@ -31,10 +59,9 @@ st.markdown("""
     .card-label { font-size: 0.9rem; color: #666; margin-bottom: 5px; }
     .card-value { font-size: 1.6rem; font-weight: bold; color: #31333F; }
     
-    /* 不同卡片的顏色區分 */
-    .money { border-left-color: #FFD700; } /* 金色 */
-    .hours { border-left-color: #007bff; } /* 藍色 */
-    .days  { border-left-color: #28a745; } /* 綠色 */
+    .money { border-left-color: #FFD700; }
+    .hours { border-left-color: #007bff; }
+    .days  { border-left-color: #28a745; }
 
     .stButton>button { 
         width: 100%; 
@@ -66,7 +93,6 @@ with st.sidebar:
     
     st.success(f"已登入")
     
-    # 薪資週期篩選
     st.divider()
     today = datetime.now()
     period_options = []
@@ -86,12 +112,11 @@ all_data = pd.read_csv(DATA_FILE)
 all_data["日期"] = pd.to_datetime(all_data["日期"]).dt.date
 df = all_data[all_data["密鑰"] == str(user_key)].copy()
 
-# 篩選當前週期資料
 end_date = datetime(sel_year, sel_month, 20).date()
 start_date = (datetime(sel_year, sel_month, 1) - timedelta(days=15)).replace(day=21).date()
 filtered_df = df[(df['日期'] >= start_date) & (df['日期'] <= end_date)].sort_values("日期", ascending=False)
 
-# 4. 主要分頁介面
+# 4. 主要分頁介面 (套用美化樣式)
 tab1, tab2 = st.tabs(["➕ 新增登記", "📊 數據報表"])
 
 with tab1:
@@ -146,7 +171,6 @@ with tab1:
         st.write(f"🔸 2.0時段: {calc_hours if '假日' in is_holiday else 0:.1f} H")
 
 with tab2:
-    # --- 升級版：美化統計卡片 ---
     total_amt = filtered_df['總加班費'].sum()
     total_hrs = filtered_df['總時數'].sum()
     total_days = len(filtered_df)
@@ -181,7 +205,6 @@ with tab2:
         
         st.dataframe(filtered_df.drop(columns=["密鑰"]), use_container_width=True)
         
-        # 刪除功能
         st.divider()
         st.subheader("🗑️ 刪除紀錄")
         delete_options = filtered_df.apply(lambda x: f"{x['日期']} ({x['類型']} {x['總時數']}H)", axis=1).tolist()
