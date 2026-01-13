@@ -106,7 +106,7 @@ with tab1:
         if dt2 <= dt1: dt2 += timedelta(days=1)
         calc_hours = float((dt2 - dt1).total_seconds() / 3600.0)
         
-        f_wage = st.number_input("您的時薪", value=218, step=1)
+        f_wage = st.number_input("您的時薪", value=200, step=1)
         
         if st.button("🚀 確認儲存"):
             a_h = 0.0; b_h = 0.0; c_h = 0.0
