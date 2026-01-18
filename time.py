@@ -11,7 +11,7 @@ SAVED_API_KEY = "AIzaSyBRkz4-mlojLIdnkY6h85e4r1Xkv2S2AM4"
 
 st.set_page_config(page_title="AI 智學出題王", layout="wide")
 
-# 初始化 Session State (確保按鈕功能不消失)
+# 初始化 Session State (確保功能與資料不消失)
 if 'num_q' not in st.session_state: st.session_state.num_q = 15
 if 'diff' not in st.session_state: st.session_state.diff = "普通"
 if 'wrong_pool' not in st.session_state: st.session_state.wrong_pool = []
@@ -28,12 +28,13 @@ st.markdown("""
         box-shadow: 0 4px 12px rgba(0,0,0,0.05); margin-bottom: 20px; 
         border-left: 8px solid #007bff; 
     }
+    .result-box { padding: 10px; border-radius: 8px; margin-top: 10px; font-weight: bold; }
     .stTextInput>div>div>input { background-color: #fff9e6; }
     </style>
     """, unsafe_allow_html=True)
 
 # ==========================================
-# ⚙️ 2. 側邊欄：整合所有控制功能 (不變)
+# ⚙️ 2. 側邊欄：整合所有控制功能
 # ==========================================
 with st.sidebar:
     st.header("🔑 安全與記憶")
@@ -83,7 +84,7 @@ with st.sidebar:
         st.rerun()
 
 # ==========================================
-# 📸 3. 主要介面 (不變)
+# 📸 3. 主要介面
 # ==========================================
 st.title("📸 AI 全功能出題系統")
 
@@ -94,7 +95,7 @@ else:
 
     if uploaded_files:
         if st.button("✨ 辨識圖片並出題", type="primary", use_container_width=True):
-            with st.spinner("AI 正在深度掃描圖片..."):
+            with st.spinner("AI 正在分析圖片..."):
                 try:
                     image_data = [Image.open(file) for file in uploaded_files]
                     wrong_hint = str([q['question'] for q in st.session_state.wrong_pool[-3:]])
@@ -115,46 +116,54 @@ else:
                 except Exception as e: st.error(f"生成出錯：{e}")
 
 # ==========================================
-# 📝 4. 測驗與「強化比對」批改邏輯
+# 📝 4. 測驗與「即時題目下批改」邏輯
 # ==========================================
 if st.session_state.quiz_data:
     st.divider()
+    
+    # 輔助清理與比對函式
+    def get_clean_text(text):
+        return re.sub(r'^[A-D][\.\)\s\-]+', '', str(text)).strip()
+
     with st.form("quiz_form"):
+        # 逐題顯示
         for i, q in enumerate(st.session_state.quiz_data):
             st.markdown(f'<div class="quiz-card"><b>Q{i+1}: {q["question"]}</b></div>', unsafe_allow_html=True)
-            st.session_state.user_answers[i] = st.radio(f"作答 Q{i+1}", q['options'], key=f"ans_{i}")
+            
+            # 使用者選擇
+            st.session_state.user_answers[i] = st.radio(f"作答 Q{i+1}", q['options'], key=f"ans_{i}", label_visibility="collapsed")
+            
+            # 如果已經提交，則在題目下方直接顯示結果
+            if st.session_state.submitted:
+                user_raw = st.session_state.user_answers[i]
+                correct_raw = q['answer']
+                u_clean = get_clean_text(user_raw)
+                c_clean = get_clean_text(correct_raw)
+                
+                # 強化比對邏輯
+                if u_clean == c_clean or u_clean in c_clean or c_clean in u_clean:
+                    st.success(f"✅ 第 {i+1} 題正確！")
+                else:
+                    st.error(f"❌ 第 {i+1} 題錯誤。正確答案：【{correct_raw}】")
+                
+                st.info(f"💡 解析：{q.get('explanation', '無詳細解析')}")
+                st.divider()
         
-        if st.form_submit_button("🏁 提交答案並更新紀錄", use_container_width=True):
+        if st.form_submit_button("🏁 提交答案並即時批改", use_container_width=True):
             st.session_state.submitted = True
+            st.rerun() # 重新整理以觸發題目下方的結果顯示
 
+    # 計算總分並更新錯題本
     if st.session_state.submitted:
         score = 0
-        
-        # --- 核心修復：強化比對函式 ---
-        def get_clean_text(text):
-            # 移除 A. B. C. D. 前綴、空白、以及常見標點符號
-            t = re.sub(r'^[A-D][\.\)\s\-]+', '', str(text)).strip()
-            return t
-
-        st.subheader("📊 批改報告")
         for i, q in enumerate(st.session_state.quiz_data):
-            user_raw = st.session_state.user_answers[i]
-            correct_raw = q['answer']
-            
-            u_clean = get_clean_text(user_raw)
-            c_clean = get_clean_text(correct_raw)
-            
-            # 比對邏輯：完全匹配 OR 包含匹配 (防止 AI 多寫或少寫字)
+            u_clean = get_clean_text(st.session_state.user_answers[i])
+            c_clean = get_clean_text(q['answer'])
             if u_clean == c_clean or u_clean in c_clean or c_clean in u_clean:
                 score += 1
-                st.success(f"✅ 第 {i+1} 題正確")
             else:
-                st.error(f"❌ 第 {i+1} 題錯誤。正確答案：【{correct_raw}】")
                 if q['question'] not in [wq['question'] for wq in st.session_state.wrong_pool]:
                     st.session_state.wrong_pool.append(q)
-            
-            st.info(f"💡 解析：{q.get('explanation', '無詳細解析')}")
-            st.divider()
         
         st.balloons()
         st.metric("本次得分", f"{score} / {len(st.session_state.quiz_data)}")
