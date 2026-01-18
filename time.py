@@ -4,6 +4,11 @@ import json
 import re
 from PIL import Image
 
+# ==========================================
+# 🔑 API KEY 配置 (已直接填入，不用再手動輸入)
+# ==========================================
+SAVED_API_KEY = "AIzaSyBRkz4-mlojLIdnkY6h85e4r1Xkv2S2AM4" 
+
 # 1. 頁面配置
 st.set_page_config(page_title="AI 圖片出題王 Pro", layout="wide")
 
@@ -22,10 +27,11 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# 2. 側邊欄：API Key 與設定
+# 2. 側邊欄：自動載入 Key
 with st.sidebar:
     st.header("🔑 安全設定")
-    user_api_key = st.text_input("在此貼上新的 API Key", type="password")
+    # 預設直接使用你提供的 Key
+    user_api_key = st.text_input("API Key", value=SAVED_API_KEY, type="password")
     
     current_model = None
     if user_api_key:
@@ -35,12 +41,13 @@ with st.sidebar:
             target_model = [m for m in models if "1.5-flash" in m]
             model_name = target_model[0] if target_model else models[0]
             current_model = genai.GenerativeModel(model_name)
-            st.success("✅ 連線成功")
+            st.success("✅ API 已自動就緒")
         except:
-            st.error("❌ Key 無效")
+            st.error("❌ Key 無效，請檢查")
 
     st.divider()
     st.header("🎯 出題設定")
+    # 題數按鈕
     st.write("📌 生成題數")
     c1, c2, c3 = st.columns(3)
     with c1:
@@ -53,6 +60,7 @@ with st.sidebar:
     if 'num_q' not in st.session_state: st.session_state.num_q = 15
     st.info(f"設定：**{st.session_state.num_q} 題**")
 
+    # 難易度按鈕
     st.write("⚖️ 難度")
     d1, d2, d3 = st.columns(3)
     with d1:
@@ -65,38 +73,35 @@ with st.sidebar:
     if 'diff' not in st.session_state: st.session_state.diff = "普通"
     st.info(f"難度：**{st.session_state.diff}**")
 
-# 3. 主要介面
+# 3. 主要介面 (保持不變)
 st.title("📸 AI 視覺自動出題系統")
 
 if not user_api_key:
-    st.info("👋 請先在左側貼入 API Key。")
+    st.info("👋 請輸入 API Key 以開始。")
 else:
     uploaded_files = st.file_uploader("📂 上傳照片", type=['png', 'jpg', 'jpeg'], accept_multiple_files=True)
 
     if uploaded_files:
         if st.button("✨ 開始出題", type="primary"):
-            with st.spinner("AI 正在深度掃描內容..."):
+            with st.spinner("AI 正在分析內容並生成考題..."):
                 try:
                     image_data = [Image.open(file) for file in uploaded_files]
                     prompt = f"""
-                    你是專業老師。請分析圖片，生成 {st.session_state.num_q} 題繁體中文選擇題。
+                    你是一位專業老師。請分析圖片，生成 {st.session_state.num_q} 題繁體中文選擇題。
                     難度：{st.session_state.diff}。
-                    
-                    嚴格要求：
-                    1. JSON 格式中的 "answer" 文字必須與 "options" 裡的其中一個選項完全相同。
-                    2. 每個題目必須包含 "explanation" 欄位。
-                    3. JSON 結構：[{{"question":"","options":["","","",""],"answer":"","explanation":""}}]
+                    1. 答案 (answer) 必須與選項 (options) 完全一致。
+                    2. 每個題目必須包含解析 (explanation)。
                     """
                     response = current_model.generate_content([prompt] + image_data)
                     clean_content = re.search(r'\[.*\]', response.text, re.DOTALL).group(0)
                     st.session_state.quiz_data = json.loads(clean_content)
                     st.session_state.user_answers = {}
                     st.session_state.submitted = False
-                    st.success("🎉 生成成功！")
+                    st.success("🎉 考題生成完畢！")
                 except Exception as e:
                     st.error(f"錯誤：{e}")
 
-# 4. 測驗顯示與批改邏輯
+# 4. 顯示與批改
 if 'quiz_data' in st.session_state:
     st.divider()
     if 'submitted' not in st.session_state: st.session_state.submitted = False
@@ -110,25 +115,17 @@ if 'quiz_data' in st.session_state:
     if submit_clicked or st.session_state.submitted:
         st.session_state.submitted = True
         score = 0
-        
-        # 輔助函式：清理答案中的 A. B. C. D. 前綴
-        def clean_ans(text):
-            return re.sub(r'^[A-D][\.\)\s]+', '', str(text)).strip()
+        def clean_ans(text): return re.sub(r'^[A-D][\.\)\s]+', '', str(text)).strip()
 
         for i, q in enumerate(st.session_state.quiz_data):
             u_ans = clean_ans(st.session_state.user_answers[i])
             c_ans = clean_ans(q['answer'])
-            
             if u_ans == c_ans:
                 score += 1
                 st.success(f"✅ 第 {i+1} 題正確")
             else:
                 st.error(f"❌ 第 {i+1} 題錯誤。正確答案：【{q['answer']}】")
-            
-            # 使用 .get() 避免 KeyError 導致當機
-            exp = q.get('explanation', "此題目 AI 未提供詳細解析。")
-            st.info(f"💡 解析：{exp}")
+            st.info(f"💡 解析：{q.get('explanation', '無詳細解析')}")
             st.divider()
-            
         st.balloons()
         st.metric("總分", f"{score} / {len(st.session_state.quiz_data)}")
