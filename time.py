@@ -10,7 +10,7 @@ from PIL import Image
 API_KEY = "AIzaSyBRkz4-mlojLIdnkY6h85e4r1Xkv2S2AM4" 
 genai.configure(api_key=API_KEY)
 
-# 🚀 模型自動偵測邏輯 (保持不變)
+# 🚀 模型自動偵測邏輯
 @st.cache_resource
 def get_working_model():
     try:
@@ -30,48 +30,26 @@ st.set_page_config(page_title="AI 圖片出題王 Pro", layout="wide")
 
 st.markdown("""
     <style>
-    /* 整體背景與字體 */
     .main { background-color: #f4f7f9; }
-    
-    /* 側邊欄按鈕美化 */
-    div.stButton > button:first-child {
-        border-radius: 8px;
-        transition: all 0.3s;
-    }
-    
-    /* 題目卡片美化 */
+    div.stButton > button { border-radius: 8px; transition: all 0.3s; }
     .quiz-card { 
         background-color: white; 
-        padding: 30px; 
-        border-radius: 18px; 
-        box-shadow: 0 8px 20px rgba(0,0,0,0.06); 
-        margin-bottom: 25px; 
-        border-left: 10px solid #007bff; 
+        padding: 25px; 
+        border-radius: 15px; 
+        box-shadow: 0 4px 12px rgba(0,0,0,0.05); 
+        margin-bottom: 20px; 
+        border-left: 8px solid #007bff; 
     }
-    
-    /* 上傳框美化 */
-    .stFileUploader { 
-        background-color: white; 
-        padding: 40px; 
-        border-radius: 25px; 
-        border: 2px dashed #007bff;
-        text-align: center;
-    }
-    
-    /* 分數大字報 */
-    .score-display {
-        font-size: 3rem;
-        font-weight: bold;
-        color: #28a745;
-    }
+    .correct-ans { color: #28a745; font-weight: bold; }
+    .wrong-ans { color: #dc3545; font-weight: bold; }
     </style>
     """, unsafe_allow_html=True)
 
-# 2. 側邊欄：改用按鈕選擇
+# 2. 側邊欄設定
 with st.sidebar:
     st.header("🎯 出題設定")
     
-    # 題數選擇按鈕
+    # 題數按鈕
     st.write("📌 生成題數")
     col1, col2, col3 = st.columns(3)
     with col1:
@@ -81,13 +59,12 @@ with st.sidebar:
     with col3:
         if st.button("30題"): st.session_state.num_q = 30
     
-    # 初始化預設值
     if 'num_q' not in st.session_state: st.session_state.num_q = 15
     st.info(f"當前設定：**{st.session_state.num_q} 題**")
 
     st.divider()
 
-    # 難易度選擇按鈕
+    # 難易度按鈕
     st.write("⚖️ 難易程度")
     d_col1, d_col2, d_col3 = st.columns(3)
     with d_col1:
@@ -102,78 +79,81 @@ with st.sidebar:
 
     st.divider()
     if st.button("🗑️ 清空數據", use_container_width=True):
-        if 'quiz_data' in st.session_state: del st.session_state.quiz_data
+        for key in ['quiz_data', 'user_answers', 'submitted']:
+            if key in st.session_state: del st.session_state[key]
         st.rerun()
 
-# 3. 主要顯示區
+# 3. 主要介面
 st.title("📸 AI 視覺自動出題系統")
-st.caption("iPad 專用美化版：選取 9 張照片，快速轉化為深度測驗。")
 
-uploaded_files = st.file_uploader("📂 點擊選取講義或筆記照片", type=['png', 'jpg', 'jpeg'], accept_multiple_files=True)
+uploaded_files = st.file_uploader("📂 上傳照片 (支援多圖)", type=['png', 'jpg', 'jpeg'], accept_multiple_files=True)
 
 if uploaded_files:
-    st.success(f"✅ 已成功載入 {len(uploaded_files)} 張內容")
-    # 縮圖展示
     img_cols = st.columns(min(len(uploaded_files), 5))
     for idx, file in enumerate(uploaded_files):
         with img_cols[idx % 5]: st.image(file, use_container_width=True)
 
     if st.button("✨ 辨識圖片並開始出題", type="primary"):
-        if not model:
-            st.error("AI 引擎未就緒")
-        else:
-            with st.spinner(f"正在分析圖片內容並設計 {st.session_state.num_q} 道題目..."):
-                try:
-                    image_data = [Image.open(file) for file in uploaded_files]
-                    prompt = f"""
-                    你是一位資深教師，請深度分析這 {len(uploaded_files)} 張圖片的知識點。
-                    
-                    請生成 {st.session_state.num_q} 題繁體中文選擇題。
-                    難度：{st.session_state.diff}。
-                    
-                    要求：
-                    1. 題目必須平均分佈在所有照片中。
-                    2. 回傳必須是純 JSON 陣列格式：
-                    [
-                      {{"question": "題目", "options": ["A", "B", "C", "D"], "answer": "正確選項文字", "explanation": "解析"}}
-                    ]
-                    """
-                    response = model.generate_content([prompt] + image_data)
-                    
-                    # 清理 JSON
-                    clean_content = response.text
-                    json_match = re.search(r'\[.*\]', clean_content, re.DOTALL)
-                    clean_content = json_match.group(0) if json_match else re.sub(r'```json\s*|```\s*', '', clean_content).strip()
-                    
-                    st.session_state.quiz_data = json.loads(clean_content)
-                    st.session_state.user_answers = {}
-                    st.success("🎉 題目生成完畢！")
-                except Exception as e:
-                    st.error(f"生成失敗：{e}")
+        with st.spinner("AI 正在深度掃描內容..."):
+            try:
+                image_data = [Image.open(file) for file in uploaded_files]
+                prompt = f"""
+                你是資深老師。讀取這 {len(uploaded_files)} 張圖，生成 {st.session_state.num_q} 題繁體中文選擇題。
+                難度：{st.session_state.diff}。
+                
+                重要規範：
+                1. "answer" 欄位必須與 "options" 列表中的其中一個字串完全一致（不可包含 A. B. 等前綴）。
+                2. 嚴格回傳 JSON 陣列格式：
+                [
+                  {{"question": "題目", "options": ["選項1", "選項2", "選項3", "選項4"], "answer": "選項1", "explanation": "解析"}}
+                ]
+                """
+                response = model.generate_content([prompt] + image_data)
+                clean_content = re.search(r'\[.*\]', response.text, re.DOTALL).group(0)
+                st.session_state.quiz_data = json.loads(clean_content)
+                st.session_state.user_answers = {}
+                st.session_state.submitted = False # 重置提交狀態
+                st.success("🎉 題目生成成功！")
+            except Exception as e:
+                st.error(f"生成失敗：{e}")
 
 # 4. 測驗顯示區
 if 'quiz_data' in st.session_state:
     st.divider()
+    
+    # 用一個變數紀錄是否點擊了提交
+    if 'submitted' not in st.session_state: st.session_state.submitted = False
+
     with st.form("quiz_form"):
         for i, q in enumerate(st.session_state.quiz_data):
             st.markdown(f'<div class="quiz-card"><b>第 {i+1} 題：{q["question"]}</b></div>', unsafe_allow_html=True)
-            st.session_state.user_answers[i] = st.radio(f"作答區 (Q{i+1})", q['options'], key=f"ans_{i}")
+            st.session_state.user_answers[i] = st.radio(f"選擇答案 (Q{i+1})", q['options'], key=f"ans_{i}")
         
-        if st.form_submit_button("🏁 提交答案查看報告"):
-            score = sum([1 for i, q in enumerate(st.session_state.quiz_data) if st.session_state.user_answers[i] == q['answer']])
+        submit_clicked = st.form_submit_button("🏁 提交答案")
+
+    if submit_clicked or st.session_state.submitted:
+        st.session_state.submitted = True
+        score = 0
+        total = len(st.session_state.quiz_data)
+        
+        st.subheader("📊 批改報告")
+        for i, q in enumerate(st.session_state.quiz_data):
+            # 關鍵：自動去掉前後空格進行比對
+            user_ans = str(st.session_state.user_answers[i]).strip()
+            correct_ans = str(q['answer']).strip()
             
-            st.subheader("📊 詳細批改報告")
-            for i, q in enumerate(st.session_state.quiz_data):
-                if st.session_state.user_answers[i] == q['answer']:
-                    st.success(f"✅ 第 {i+1} 題答對")
-                else:
-                    st.error(f"❌ 第 {i+1} 題答錯。正確答案：【{q['answer']}】")
-                st.info(f"💡 解析：{q['explanation']}")
+            is_correct = (user_ans == correct_ans)
             
-            st.markdown(f"""
-            <div style="text-align: center; background: white; padding: 40px; border-radius: 20px; border: 4px solid #28a745;">
-                <p style="font-size: 1.5rem; margin-bottom: 0;">您的最終得分</p>
-                <div class="score-display">{score} / {len(st.session_state.quiz_data)}</div>
-            </div>
-            """, unsafe_allow_html=True)
-            st.balloons()
+            if is_correct:
+                score += 1
+                st.markdown(f"✅ **第 {i+1} 題：正確**")
+            else:
+                st.markdown(f"❌ **第 {i+1} 題：錯誤**")
+                st.write(f"你的答案：`{user_ans}`")
+                st.write(f"正確答案：<span class='correct-ans'>{correct_ans}</span>", unsafe_allow_html=True)
+            
+            st.info(f"💡 解析：{q['explanation']}")
+            st.divider()
+        
+        st.balloons()
+        st.metric("總分", f"{score} / {total}")
